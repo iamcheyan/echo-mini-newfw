@@ -90,7 +90,9 @@ DAC ring is full). Details and the test conditions: `ETUDE.md` (§52 to §61, ac
     cd fw && make
 
 Needs `arm-none-eabi-gcc` and Python 3. Output: `fw/build/HIFIEC70.IMG`, installed from the
-device's own firmware menu or the loader's USB mode. See `fw/README.md`.
+device's own firmware menu or the loader's USB mode. See [`fw/README.md`](fw/README.md).
+For Debian packages and the recorded local build/check results, see
+[`docs/LOCAL_BUILD.md`](docs/LOCAL_BUILD.md).
 
 ## Acknowledgments
 
