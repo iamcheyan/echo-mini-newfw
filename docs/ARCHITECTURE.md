@@ -176,7 +176,66 @@ HiFi 核链接脚本把代码放在其视角的地址 0（HIGHRAM0），数据/B
 
 改造后按变更层次选择验证：纯解析/算法可先 host test；A/B 协议需两侧构建和 emulation；链接布局必须检查 map/ASSERT；更新器/USB/存储/电源/音频外设需额外审查硬件副作用，真机测试需单独安排。
 
-## 9. 常见改造入口索引
+## 9. 字体效果与字体改造
+
+### 9.1 当前字体和显示路径
+
+- 字体为 TakWolf 的 **Fusion Pixel 12px proportional**，SIL Open Font License 1.1；当前默认 `FONT_LANG=ja`。BDF 声明 pixel size 12、字形框 12×16、ascent 13、descent 3。比例字体每个字符 advance 可不同。
+- 固件中不是每次显示时解析 BDF/TTF：`fw/tools/mkfusion.py` 在构建阶段把 BDF 转成紧凑的 `FPXF` 字库和内置 ASCII C 数组；`mkimg.py` 把字库打进固件 image。运行时 `font.c` 从 FW1/FW2 读字库索引，缓存 256 条字形记录，并以 16 个字符为一组按需从 eMMC 读取。
+- `lcd.c` 解码 UTF-8 码点，读取每个字形的位图，再用 LCD 像素写入逐点绘制。当前字形是单色 bitmap；传入的前景/背景色在绘制时决定颜色。代码有 `sc=1/2` 的整数倍缩放路径，但它只是放大已有像素，不会增加轮廓细节。
+- 字库有 37,690 个 glyph，当前 BDF 源文件约 5.1 MiB，构建后的字体记录约 1,000 KiB。完整索引表约 34 KiB 常驻 RAM，字形缓存和其他静态区也占用受限的 SRAM；`.bss` 必须留在固定 DAC ring 地址之前，见 `fw/link.ld` 和 `fw/src/font.c`。
+- 当前仓库只保留日文 BDF。构建参数列有 `zh_hans`、`zh_hant`、`zh_hk`、`zh_tw` 等变体，但相关 BDF 不在 checkout；若要构建指定地区字形，需先按上游字体的许可证取得并纳入对应字体源文件，再验证许可和重现命令。当前 ja 字体包含汉字/假名等码点，缺字时 `font_glyph()` 回退到 ASCII 问号。
+
+### 9.2 做出更美观字体的可行方案
+
+推荐先保留运行时 bitmap 架构，只换构建输入/栅格化流程：
+
+1. 选择明确授权可嵌入/再分发的 TTF/OTF 字体及语言变体。
+2. 在主机侧用 FreeType/fontTools 等栅格化为合适字号和灰阶深度；可先做黑白 1-bit，再评估 2-bit/4-bit 灰阶抗锯齿。
+3. 生成当前 `FPXF` 记录格式或一个版本化的新格式，包含 glyph advance、bearing、尺寸、bitmap 和 Unicode 映射；改 `mkfusion.py`/新 converter 与 `font.c`/`lcd.c` 的解析保持一致。
+4. 明确只打包 UI 所需字符集、常见 CJK 字符集或全量字库。完整 CJK 字体会增加 image 大小；按需从 eMMC 读能降低常驻 RAM，但会增加首次遇到字形时的存储读取延迟。
+5. 验证字形覆盖、fallback、字体缓存命中/缺失、UTF-8、行高/裁切、滚动和长文件名；检查字体 blob 大小、RAM map、`.bss` 余量及 LCD 刷新时间。
+
+若只想改善外观，离线栅格化是改动面和运行期开销较小的方向。运行时 TrueType/OpenType 渲染需要额外的字体解析、曲线栅格化、缓存/内存管理和排版逻辑；在 320×170 LCD 与当前裸机 SRAM/CPU 约束下，先做原型并测 RAM、构建体积和每帧绘制耗时，再决定是否采用。它不是当前代码已有的功能。
+
+`lcd.c` 当前通过逐像素写面板传输绘制黑白 bitmap。即使上游提供灰阶 glyph，仍需设计 LCD 的灰阶呈现（例如空间抖动/子像素时序或多次写入），验证视觉效果和总线吞吐；不能只换字体文件就宣称有抗锯齿。
+
+## 10. 仿真器：可先在 PC 验证什么
+
+本项目不需要所有改动都每次上设备测试。仓库有两种 Unicorn 模拟路径，但依赖和模型范围不同。
+
+### 整机固件模拟
+
+`fw/tools/emu_fw.py` 加载已构建镜像，模拟 IDB loader 的加载方式，并执行主核；实现 LCD/panel、按键、eMMC 磁盘镜像、可选 SD 镜像、部分 ADC/GPIO/I2C/RTC 与 DAC 行为。启用 `fw/tools/emu_coreb.py` 时可运行实际新固件的 HiFi 核 codec。
+
+仓库提供的基本流程（只使用你有权使用的 boot dump/测试素材；boot dump 不得提交）：
+
+```sh
+cd fw
+make
+# 准备磁盘镜像；mkdisk 的 --boot 需要本地 BOOTDUMP.BIN 或 ECHO_BOOTDUMP
+python3 tools/mkdisk.py /path/to/test-disk.img build/HIFIEC70.IMG \
+  --boot /path/to/BOOTDUMP.BIN /path/to/test-audio.flac=TEST.FLAC
+python3 tools/emu_fw.py build/HIFIEC70.IMG --disk /path/to/test-disk.img \
+  --keys 3000:MENU,3150:NONE --shots 5000:/path/to/screen.png --dac /path/to/heard.raw
+```
+
+- `fw/tools/emu_fw.py` 的**当前文档帮助/源码描述**列出 `--keys`、`--shots`、`--disk`、`--sd`、`--ms`/`--steps`、LCD trace，以及 `--adc1`、`--power`、`--sel`、`--fast`、`--sd-out`、`--adc0-at`、`--gpio-at` 等参数；`--png` 会在模拟结束时保存 framebuffer，`--pcm` 捕获 B 核输出、`--dac` 捕获 DMA 消费的数据，`--dump-disk` 另行导出模拟写入后的磁盘副本。查看脚本文件头与当前版本参数实现以确认准确语法。
+
+当前环境在本次文档核查时缺少 Python `unicorn` 模块，直接运行脚本报 `ModuleNotFoundError: No module named 'unicorn'`；安装/创建隔离 Python 环境后再运行。除此之外，整机磁盘模拟的 `mkdisk.py` 还需要可用的设备 boot-area dump；该文件属于设备数据，保存在本地私有目录，不能进 Git。只想做 UI/启动片段实验时，检查 emulator 是否支持不带 disk 的运行模式；播放/存储场景则需要有效的镜像输入和测试媒体。
+
+### HiFi codec 主机模拟
+
+`tools/emu_host.py FW.IMG MODULE FILE OUT.raw [--codec N] [--seconds S] [--trace]` 用 Unicorn 从 HiFi 模块 reset vector 启动，提供模拟主核 mailbox 和文件服务，捕获 decoder PCM。它适合 codec 协议、单 codec 解码和 PCM 对照；不是完整主核 UI/存储模拟。它同样需要 Unicorn Python 依赖以及对应固件模块和测试音频文件。
+
+### 仿真边界
+
+- 适合：UI/按键流程、文件/队列逻辑、格式解析、A/B mailbox、PCM 输出一致性、可注入的异常路径和回归场景。
+- 不足以代替：真实板级时序/电气、所有寄存器副作用、eMMC/SD 物理差异、真实 LCD 刷新成本、DAC 声音质量/底噪、USB host 互操作、时钟负载、功耗、掉电行为及实际升级/恢复。
+- 某些加速器在 emulator 中是软件模型，不等于硅片逐周期一致；源码研究已有案例说明 emulator 本身也可能有缺陷。因此需区分模拟通过、主机单元测试、构建通过和设备验收。
+- 推荐节奏：静态检查/host test → emulator 场景 → 真机只验证 emulator 无法覆盖的板级风险。真机测试前先有可恢复的 stock firmware、确认设备型号/容量、评估失败后恢复手段，并单独安排允许的写入操作。
+
+## 11. 常见改造入口索引
 
 | 目标 | 起点 | 必须追到的下游 | 专题/验证 |
 |---|---|---|---|
@@ -193,7 +252,7 @@ HiFi 核链接脚本把代码放在其视角的地址 0（HIGHRAM0），数据/B
 | 修改字体/本地化 | `fw/font/`、`mkfusion.py`、UI 文本 | 字体 blob 体积、字形覆盖、map | 字体许可证、目标语言真机显示 |
 | 改研究工具 | 根 `tools/` | 私有 stock image/外部模块的依赖说明 | 不要提交 stock image、设备 dump 或本机路径 |
 
-## 10. 修改前的维护清单
+## 12. 修改前的维护清单
 
 1. 记录 `git status --short --branch`、`git rev-parse HEAD`；保留已有工作，不 reset/clean。
 2. 搜索功能入口和调用链，不只看同名文件；确认是否有 A/B 两核、多种输出模式或持久状态。
@@ -204,11 +263,11 @@ HiFi 核链接脚本把代码放在其视角的地址 0（HIGHRAM0），数据/B
 7. 检查构建产物是否被忽略；只提交源码/文档，不提交 `fw/build/`、设备镜像、stock image、私有 logs、用户音频或本机路径。
 8. 更新用户文档时区分“源码实现”“本机 build/test”“模拟器验证”“真机验证”，不要用一个 PASS 覆盖所有层次。
 
-## 11. 公开内容与许可证边界
+## 13. 公开内容与许可证边界
 
 仓库 README 声明实现代码是项目作者的 MIT 许可，但 `third_party/` 和字体各自保留许可证；以 `LICENSE`、`THIRD_PARTY_NOTICES.md` 和每个依赖目录为准。不要把它们合并成单一许可证结论。项目文档描述不包含 stock firmware/SDK 代码；根目录 `ETUDE.md` 对本地研究资料也有明确边界。不要把本机下载的官方固件、设备 dump、私有日志、音乐样本或提取 payload 放入 fork。需要新增代码时，保持来源/许可证可追溯，并检查已有第三方改动与上游差异。
 
-## 12. 相关文档
+## 14. 相关文档
 
 - `README.md`：项目能力、限制和布局总览。
 - `MANUAL.md`：菜单、按键、播放和用户安装说明。
