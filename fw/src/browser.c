@@ -204,6 +204,29 @@ int list_load(struct listing *l, const struct fat_dir *d)
     return r;
 }
 
+/* "Name  used/total G": the space of a volume, when the background count is ready */
+static char *put_gib(char *p, uint32_t mib)
+{
+    uint32_t tenths = mib * 10 / 1024;
+    p = put_dec(p, tenths / 10);
+    *p++ = '.';
+    return put_dec(p, tenths % 10);
+}
+
+static void space_label(char *b, const char *name, int v)
+{
+    uint32_t total, used;
+    char *p = put_str(b, name);
+    if (fat_space(v, &total, &used) == 0) {
+        p = put_str(p, "  ");
+        p = put_gib(p, used);
+        *p++ = '/';
+        p = put_gib(p, total);
+        p = put_str(p, "G");
+    }
+    *p = 0;
+}
+
 /* The top level (ETUDE §38): the internal volume, then the card when one is in */
 static int sd_bad;                              /* the card in did not mount: SD_NOREPLY, SD_NOFS */
 enum { SD_NOREPLY = 1, SD_NOFS = 2 };
@@ -233,10 +256,21 @@ int dir_load(const struct fat_dir *d)
         dir_l.n = dir_l.full = 0;
         dir_l.used = 0;
         top_entry(T("Library"), F_LIB);         /* (first: ETUDE §127) */
-        top_entry(T("Internal"), 0);           /* (the names of the volumes: the language of */
-        if (sd_present())                       /* the listing's load) */
-            top_entry(sd_bad == SD_NOREPLY ? T("SD card (not responding)") :
-                      sd_bad == SD_NOFS ? T("SD card (needs FAT32 or exFAT)") : T("SD card"), F_SD);
+        char lb[80];
+        space_label(lb, T("Internal"), FAT_VOL_INT);
+        top_entry(lb, 0);                        /* the names follow the listing's language */
+        if (sd_present()) {
+            if (!sd_bad)
+                sd_open();                      /* mount before asking for its capacity */
+            if (sd_bad == SD_NOREPLY)
+                top_entry(T("SD card (not responding)"), F_SD);
+            else if (sd_bad == SD_NOFS)
+                top_entry(T("SD card (needs FAT32 or exFAT)"), F_SD);
+            else {
+                space_label(lb, T("SD card"), FAT_VOL_SD);
+                top_entry(lb, F_SD);
+            }
+        }
     } else {
         r = list_load(&dir_l, d);
         if (r < 0 && d->vol == FAT_VOL_SD) {    /* a read error: mounted again at the next */

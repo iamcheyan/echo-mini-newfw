@@ -339,6 +339,19 @@ static int scr_pop(int *scr)
     return UI_FULL;
 }
 
+static volatile int space_job_finished;
+static int space_job_queued;
+
+static void space_count_job(void *arg)
+{
+    (void)arg;
+    while (fat_space_pending()) {
+        fat_space_poll();
+        storage_yield();                     /* one sector at a time; the UI keeps running */
+    }
+    space_job_finished = 1;
+}
+
 void ui_main(void)
 {
     int scr = SCR_BROWSER, full = 1, quick = 0, drawn_cur = -2, drawn_playing = -1, was_off = 0;
@@ -556,6 +569,18 @@ void ui_main(void)
         pp = perf_begin("storage");
         storage_run(STORAGE_BUDGET_US);         /* the long reads, a few ms each pass (§100) */
         perf_end(pp);
+        if (space_job_finished) {
+            space_job_finished = 0;
+            space_job_queued = 0;
+            if (!depth) {
+                dir_load(&path[0].dir);         /* redraw the root with its measured capacity */
+                if (path[0].sel >= dir_n)
+                    path[0].sel = 0;
+                b_dirty = full = 1;
+            }
+        }
+        if (!space_job_queued && fat_space_pending() && !storage_submit(space_count_job, 0))
+            space_job_queued = 1;
         cpu_wait();                             /* until the next 1 ms tick */
     }
 }

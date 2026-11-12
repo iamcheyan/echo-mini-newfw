@@ -40,7 +40,8 @@ extern struct fat_vol vol;      /* the internal volume */
 extern struct fat_vol sdvol;    /* the card's */
 
 int fat_mount(uint32_t from);   /* searches from sector 'from' in 1 MiB steps */
-int fat_space_poll(void);       /* a step of the count of the space in use; 1: one is done */
+int fat_space_poll(void);       /* one sector of the background count */
+int fat_space_pending(void);    /* either mounted volume still needs counting */
 int fat_space(int v, uint32_t *total_mib, uint32_t *used_mib);   /* 0, or <0 on a read error */
 int fat_mount_sd(void);         /* the first FAT32 or exFAT partition of the card (sd_init done) */
 /* Calls fn for each regular file of the root directory; stops when fn returns non-zero

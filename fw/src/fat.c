@@ -298,6 +298,12 @@ int fat_space_poll(void)
     return done;
 }
 
+int fat_space_pending(void)
+{
+    return (vol.mounted && !vol.used_ok && !vol.used_fail) ||
+           (sdvol.mounted && !sdvol.used_ok && !sdvol.used_fail);
+}
+
 int fat_space(int vi, uint32_t *total_mib, uint32_t *used_mib)
 {
     struct fat_vol *v = V(vi);
