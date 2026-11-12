@@ -39,7 +39,7 @@ static int ql_dir = -1;                         /* the qd[] in ql, -1: none */
  * (the index's track numbers in ids, over qd: it is not used then), or NEWFWQ.DAT (qfile.c).
  * A library list is written into the file by the storage task while it plays; once written, the
  * queue is the file's (the same order). Tracks added or put next make it the file's first. */
-enum { QM_DIRS, QM_IDS, QM_FILE };
+enum { QM_DIRS, QM_IDS, QM_FAV, QM_FILE };
 static int q_mode;
 static int q_sd;                                /* QM_IDS, QM_FILE: tracks on the card */
 static uint16_t *const ids = (uint16_t *)(void *)qd;
@@ -109,15 +109,22 @@ static int slot_of(int i)                       /* the slot of track i, read if 
         }
     if (i < 0 || i >= q_n)
         return -1;
-    if (q_mode == QM_IDS && qw.state == QW_DONE && qw.token == q_token)
+    if ((q_mode == QM_IDS || q_mode == QM_FAV) && qw.state == QW_DONE && qw.token == q_token)
         q_mode = QM_FILE;                       /* written: the file's from now on */
-    if (q_mode != QM_DIRS) {                    /* a library list, or the file */
+    if (q_mode != QM_DIRS) {                    /* a library list, favourites, or the file */
         for (s = 1; s < SLOTS; s++)
             if (slot[s].used < slot[old].used)
                 old = s;
-        int r = q_mode == QM_FILE ?
-                qf_get((uint32_t)i, &slot[old].e, slot[old].name, sizeof slot[old].name) :
-                libv_track_id(ids[i], &slot[old].e, slot[old].name, sizeof slot[old].name);
+        int r;
+        if (q_mode == QM_FILE)
+            r = qf_get((uint32_t)i, &slot[old].e, slot[old].name, sizeof slot[old].name);
+        else if (q_mode == QM_FAV) {
+            const struct entry *e = &ql.e[ql.order[i]];
+            slot[old].e = *e;
+            copy_name(slot[old].name, ql.pool + e->name, sizeof slot[old].name);
+            r = 0;
+        } else
+            r = libv_track_id(ids[i], &slot[old].e, slot[old].name, sizeof slot[old].name);
         if (r)
             return -1;
         slot[old].i = i;
@@ -171,7 +178,7 @@ int q_is_lib(void)
 
 int q_is_file(void)
 {
-    if (q_mode == QM_IDS && qw.state == QW_DONE && qw.token == q_token)
+    if ((q_mode == QM_IDS || q_mode == QM_FAV) && qw.state == QW_DONE && qw.token == q_token)
         q_mode = QM_FILE;
     return q_mode == QM_FILE;
 }
@@ -380,7 +387,15 @@ static void write_job(void *arg)
     for (int i = 0; i < n; i++) {
         struct entry e;
         char name[NAME_KEEP + 1];
-        if (q_token != token || libv_track_id(ids[i], &e, name, sizeof name) || qf_put(&e, name)) {
+        int bad = q_token != token;
+        if (!bad && q_mode == QM_FAV) {
+            const struct entry *fav_e = &ql.e[ql.order[i]];
+            copy_name(name, ql.pool + fav_e->name, sizeof name);
+            bad = qf_put(fav_e, name) != 0;
+        } else if (!bad) {
+            bad = libv_track_id(ids[i], &e, name, sizeof name) != 0 || qf_put(&e, name) != 0;
+        }
+        if (bad) {
             qf_end(0);
             qw.state = QW_FAILED;
             return;
@@ -423,6 +438,50 @@ void q_from_lib(int kind, uint32_t param, int start, const char *name)
         qw.state = QW_FAILED;
 }
 
+/* Snapshot the visible favourites into the queue buffer, then persist them like a library list. */
+void q_from_favs(int start, const char *name)
+{
+    int n = fav_count();
+    if (n <= 0)
+        return;                                 /* an empty list must not clear the current queue */
+    q_clear();
+    storage_drain();                            /* cancel a previous list writer first */
+    q_tree = 0;
+    ql.n = ql.used = ql.full = 0;
+    q_sd = 0;
+    for (int i = 0; i < n && i < QL_MAX; i++) {
+        struct entry e;
+        char text[NAME_KEEP + 1];
+        if (fav_get(i, &e, text, sizeof text) || ql.used + sizeof text > ql.pool_size)
+            break;
+        e.name = (uint16_t)ql.used;
+        uint32_t len = 0;
+        while (text[len])
+            len++;
+        copy_name(ql.pool + ql.used, text, (int)(ql.pool_size - ql.used));
+        ql.used += len + 1;
+        ql.e[i] = e;
+        ql.order[i] = (uint16_t)i;
+        ql.n++;
+        q_sd |= (e.flags & F_SD) != 0;
+    }
+    if (!ql.n)
+        return;
+    q_mode = QM_FAV;
+    q_n = ql.n;
+    slots_clear();
+    q_shuffle_new(-1);
+    q_cur = start >= 0 && start < q_n ? start :
+            play_mode == MODE_SHUFFLE && q_n > 1 ? shuf_at(0) : 0;
+    if (play_mode == MODE_SHUFFLE && start >= 0)
+        q_shuffle_new(q_cur);
+    copy_name(q_folder, name, sizeof q_folder);
+    qw.state = QW_RUNNING;
+    qw.token = q_token;
+    if (storage_submit(write_job, (void *)(uintptr_t)q_token))
+        qw.state = QW_FAILED;
+}
+
 /* ---- tracks added (MENU) or put next (PLAY) in the queue mode (ETUDE §128) ---- */
 static const struct q_src *add_src;
 static struct entry add_e __attribute__((section(".screenram")));     /* (not the BSS) */
@@ -457,7 +516,7 @@ static int to_file(void)
 {
     if (q_is_file() || !q_n)
         return 0;
-    if (q_mode == QM_IDS && qw.state == QW_RUNNING) {
+    if ((q_mode == QM_IDS || q_mode == QM_FAV) && qw.state == QW_RUNNING) {
         storage_drain();                        /* being written: to its end */
         if (q_is_file())
             return 0;

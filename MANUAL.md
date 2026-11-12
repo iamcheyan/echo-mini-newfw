@@ -21,7 +21,8 @@ Each key knows three gestures:
 
 - a **press**: a short press, counted when the key is released;
 - a **long press**: PLAY, BACK and MENU held for 0.6 s;
-- a **held** VOL+ or VOL-: repeats from 0.45 s, about ten steps a second.
+- a **held** VOL+ or VOL-: repeats from 0.45 s, about ten steps a second. With "Hold VOL to skip"
+  enabled on the play screen, holding for about 0.6 s skips once instead of continuing to change volume.
 
 **VOL+ and VOL- together**, the "chord", opens the seek mode on the play screen. Press and hold
 **VOL+ first, then press VOL-** while still holding VOL+, and release both. The other order does
@@ -129,8 +130,8 @@ page), after a short silence: about 0.2 s (Vorbis) or 0.3 s (Opus).
 
 ## The folder browser
 
-The top level lists **Library** (the music by its tags, below), **Internal** (the internal
-memory) and **SD card** (the microSD card, when one is inserted). In a folder, the subfolders come first, then the playable files. Names are
+The top level lists **Library** (the music by its tags, below), **Favourites** (songs saved from the
+browser), **Internal** (the internal memory) and **SD card** (the microSD card, when one is inserted). In a folder, the subfolders come first, then the playable files. Names are
 sorted in natural order, ignoring case, so "track 2" comes before "track 10". Empty files
 (0 bytes) are greyed and never played.
 
@@ -149,6 +150,9 @@ plays, the browser shows its progress bar at the bottom.
 | **PLAY** on a folder | open it |
 | **PLAY held** on a folder | play everything under it, subfolders included, in order (also on "Internal" or "SD card") |
 | **PLAY** on a file | play the folder from this file, and go to the play screen |
+| **PLAY held** on a file | add or remove it from Favourites |
+| **PLAY** in Favourites | play the selected song and the rest of the favourites |
+| **PLAY held** on Favourites | play the whole favourites list |
 | **BACK** | up one folder |
 | **MENU** | to the play screen |
 | **MENU held** | main menu |
@@ -302,13 +306,15 @@ power off (except the sleep timer).
 | Clock | **shown**: the time at the top of the play screen and the browser (once the clock is set); **hidden**: not shown | shown |
 | Screen off after | 10 s, 30 s, 1 min, 2 min, 5 min, never | 30 s |
 | Brightness | 10 steps: 8, 12, 17, 23, 30, 39, 50, 63, 80, 100 % (even steps to the eye) | 100 % |
-| Track title | **tags**: the title, artist and album tags; **file name**: the file name and the folder | tags |
+| Track title | **tags**: the title, artist and album tags; **file name**: the file name and the folder on the play screen | tags |
+| File list | **track title**: show the title tag in the browser; **file name**: show the file name. Missing title tags fall back to the file name | track title |
 | ReplayGain | **album**: the album gain, or the track gain when the file has no album gain; **track**: the track gain; **auto**: album, but track in shuffle; **off**: no gain. Limited by the peak tag, so that a track never clips | album |
 | ReplayGain preamp | -6 dB to +6 dB, added to the gain of tagged tracks (still limited by the peak) | 0 dB |
 | At power on | **resume playing**: opens the play screen and resumes the track; **resume paused**: opens the play screen with the track paused, PLAY starts it; **browser**: only the folder is shown | resume playing |
 | Sleep timer | off, 15, 30, 45, 60, 90 min; shows the minutes left. At the end the music fades out over 5 s, pauses, and the player powers off (it resumes paused there) | off |
 | Power off when idle | 5, 10, 20, 30 min, never: nothing played and no key for that long (not with the USB cable) | 10 min |
 | Swap VOL+ and VOL- | the volume keys of the play screen swapped (lists and seek unchanged) | no |
+| Hold VOL to skip | **yes**: while a track plays, hold VOL+ for next or VOL- for previous (about 0.6 s); **no**: held keys only change volume | yes |
 | Library (PLAY: update) | the tracks in the library's index, or **none**; PLAY updates it (below) | |
 | Restore the defaults | PLAY puts back all the defaults above, except the language | |
 

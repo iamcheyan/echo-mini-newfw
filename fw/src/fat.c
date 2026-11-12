@@ -276,7 +276,7 @@ static int space_step(struct fat_vol *v)
     if (v->bm_sec >= v->spc) {
         uint32_t nx = next_cluster(v, v->bm_c);
         if (!valid(v, nx)) {
-            v->used_fail = 1;                    /* do not guess that a broken bitmap is contiguous */
+            v->used_fail = 1;                    /* broken bitmap: do not assume it is contiguous */
             return 0;
         }
         v->bm_c = nx;

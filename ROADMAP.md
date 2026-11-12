@@ -63,6 +63,7 @@ font's tables and the log's formats out of the RAM, the first code overlay).
 | More room in core A's RAM: the font's tables read from the internal memory through a 2-way glyph cache, the log's formats kept in the image (lines made when written out) | 0.104 | §131-§133 |
 | The screen drawn by DMA: text drawn into RAM strips (a line laid out once, only the glyphs' pixels written), sent to the panel by DMAC1 while the next strip is drawn, the CPU as a fallback; the play screen's full redraw from 13.4 to 8 ms of core A, its partial one from 3.9 to 2.7 ms | 0.104 | §134-§136 |
 | Code overlays: the USB code (disk and sound card, 13.6 KiB) loaded from the internal memory into the directory listing's buffer for a USB session; code room from 29 to 42 KiB; the overlays' rules checked at each build (`tools/ovlcheck.py`) | 0.104 | §137 |
+| File-list titles, up to 64 persistent favourites, browser volume capacity, and optional long-VOL track skipping | 0.104 | — |
 
 ## The rework (0.99r1-r37, merged in 0.100)
 
@@ -253,15 +254,13 @@ One line per version; the measurements are in `ETUDE.md`.
 - Music features of the stock firmware:
   - media library: done in 0.103 (§121-§129, the table above); left: the folders played with
     PLAY held could keep their queue in NEWFWQ.DAT too; one card at a time;
-  - favourites: add / remove a track, a list of them;
   - lyrics: synchronised `.lrc` files shown on the play screen;
   - folder jumping: at the end of a folder, go on with the next one;
   - key layouts: modes, volume on short or double press (swapped volume keys: 0.96).
 - Settings and system:
   - settings: a text file on the internal memory to set them from a computer (they are kept in
     the resume state's sector today, §81); a default play mode;
-  - an information screen: version, supported formats, free space on the internal memory and
-    the card;
+  - an information screen: version and supported formats;
   - delete a file from the browser (needs writing to FAT32 and exFAT: read only today);
   - format the internal memory or the card, reset the settings;
   - interface languages (done in 0.101, §112): a native review of the Japanese and Chinese

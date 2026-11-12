@@ -468,6 +468,10 @@ msgstr "oui"
 msgid "no"
 msgstr "non"
 
+#: src/settings.c
+msgid "Hold VOL to skip"
+msgstr "Maintenir VOL pour changer de piste"
+
 #: src/uac.c src/usbmode.c
 msgid "waiting for the host"
 msgstr "en attente de l'hôte"
@@ -826,6 +830,38 @@ msgstr "Mettre à jour la bibliothèque"
 #: src/libbrowse.c
 msgid "SD card not readable (FAT32 or exFAT only)"
 msgstr "Carte SD illisible (FAT32 ou exFAT seulement)"
+
+#: src/browser.c
+msgid "Favourites"
+msgstr "Favoris"
+
+#: src/browser.c
+msgid "Favourite added"
+msgstr "Ajouté aux favoris"
+
+#: src/browser.c
+msgid "Favourite removed"
+msgstr "Retiré des favoris"
+
+#: src/browser.c
+msgid "Favourites need NEWFWLOG.TXT (32 KiB)"
+msgstr "Favoris : NEWFWLOG.TXT (32 Kio)"
+
+#: src/browser.c
+msgid "The favourites list is full"
+msgstr "La liste des favoris est pleine"
+
+#: src/browser.c
+msgid "Cannot save favourite"
+msgstr "Impossible d'enregistrer le favori"
+
+#: src/settings.c
+msgid "File list"
+msgstr "Liste des fichiers"
+
+#: src/settings.c
+msgid "track title"
+msgstr "titre du morceau"
 
 #: src/ovl.c
 msgid "This part of the firmware is damaged: install it again"

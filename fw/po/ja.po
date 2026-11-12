@@ -503,6 +503,10 @@ msgstr "はい"
 msgid "no"
 msgstr "いいえ"
 
+#: src/settings.c
+msgid "Hold VOL to skip"
+msgstr "VOL長押しで曲送り"
+
 #: src/uac.c src/usbmode.c
 #, fuzzy
 msgid "waiting for the host"
@@ -894,3 +898,35 @@ msgstr ""
 #: src/libbrowse.c
 msgid "SD card not readable (FAT32 or exFAT only)"
 msgstr ""
+
+#: src/browser.c
+msgid "Favourites"
+msgstr "お気に入り"
+
+#: src/browser.c
+msgid "Favourite added"
+msgstr "お気に入りに追加"
+
+#: src/browser.c
+msgid "Favourite removed"
+msgstr "お気に入りから削除"
+
+#: src/browser.c
+msgid "Favourites need NEWFWLOG.TXT (32 KiB)"
+msgstr "NEWFWLOG.TXTを32 KiB以上で作成"
+
+#: src/browser.c
+msgid "The favourites list is full"
+msgstr "お気に入りリストがいっぱいです"
+
+#: src/browser.c
+msgid "Cannot save favourite"
+msgstr "お気に入りを保存できません"
+
+#: src/settings.c
+msgid "File list"
+msgstr "ファイル一覧"
+
+#: src/settings.c
+msgid "track title"
+msgstr "曲名"

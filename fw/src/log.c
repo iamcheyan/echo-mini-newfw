@@ -465,7 +465,7 @@ static int write_header(void)
     return emmc_write_log(file_first, 1, hdr);
 }
 
-static uint32_t state_sector, crash_sector;
+static uint32_t state_sector, crash_sector, aux_first, aux_n;
 
 int log_attach(void)
 {
@@ -484,8 +484,10 @@ int log_attach(void)
     if (emmc_log_area(first, count))
         return logs.error = -4;
     file_first = first;
-    logs.file_sectors = count - 2;              /* the last two: the fault record (0.99r32), */
-    crash_sector = first + count - 2;           /* then the resume state */
+    aux_n = count >= 64 ? LOG_AUX_SECTORS : 0;
+    logs.file_sectors = count - 2 - aux_n;      /* header and ring, then UI records, crash, state */
+    aux_first = first + logs.file_sectors;
+    crash_sector = first + count - 2;
     state_sector = first + count - 1;
     if (emmc_read(first, 1, hdr))
         return logs.error = -5;
@@ -618,4 +620,23 @@ int log_crash_write(const void *buf)
     if (!logs.attached || !crash_sector)
         return -1;
     return emmc_write_log(crash_sector, 1, buf);
+}
+
+int log_aux_count(void)
+{
+    return logs.attached ? (int)aux_n : 0;
+}
+
+int log_aux_read(int i, void *buf)
+{
+    if (!logs.attached || i < 0 || (uint32_t)i >= aux_n)
+        return -1;
+    return emmc_read(aux_first + (uint32_t)i, 1, buf);
+}
+
+int log_aux_write(int i, const void *buf)
+{
+    if (!logs.attached || i < 0 || (uint32_t)i >= aux_n)
+        return -1;
+    return emmc_write_log(aux_first + (uint32_t)i, 1, buf);
 }

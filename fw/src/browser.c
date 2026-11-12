@@ -86,6 +86,18 @@ static struct {
     uint32_t t;
     char text[96];
 } browser_mq = { .index = UINT16_MAX };
+#define TITLE_CACHE_N 16
+struct title_cache_entry {
+    uint16_t index;
+    uint8_t state;                              /* 0: not read, 1: scheduled, 2: ready */
+    char title[96];
+};
+static struct title_cache_entry title_cache[TITLE_CACHE_N];
+static uint16_t title_cache_next, title_req_index;
+static uint32_t title_gen, title_req_gen;
+static int title_pending;
+static struct entry title_req_entry;
+static char title_req_fallback[40];
 int dir_n;
 static int dir_full;
 static int qmode;                               /* the queue mode (below) */
@@ -94,15 +106,17 @@ static uint32_t qmsg_at;
 static int qmsg_on;
 
 static int lib_shown;                           /* the listing is a library list */
+static int fav_shown;                           /* the listing is the favourites list */
 
 static const char *ent_name(int i)              /* the i-th entry shown, sorted */
 {
-    return lib_shown ? libv_name(i) : dir.pool + dir.e[dir.order[i]].name;
+    return fav_shown ? fav_view_name(i) : lib_shown ? libv_name(i) :
+           dir.pool + dir.e[dir.order[i]].name;
 }
 
 const struct entry *ent(int i)
 {
-    return lib_shown ? libv_ent(i) : &dir.e[dir.order[i]];
+    return fav_shown ? fav_view_entry(i) : lib_shown ? libv_ent(i) : &dir.e[dir.order[i]];
 }
 
 /* An entry at the end of the listing, its name (len bytes) into the pool; 0 when it is full */
@@ -222,7 +236,7 @@ static void space_label(char *b, const char *name, int v)
         p = put_gib(p, used);
         *p++ = '/';
         p = put_gib(p, total);
-        p = put_str(p, "G");
+        p = put_str(p, EN("G"));
     }
     *p = 0;
 }
@@ -239,16 +253,33 @@ static void top_entry(const char *name, uint16_t flags)
     list_add(&dir_l, name, len, 0, 0, (uint16_t)(F_DIR | F_VOLROOT | flags));
 }
 
+static void title_reset(void)
+{
+    title_gen++;
+    title_cache_next = 0;
+    for (unsigned i = 0; i < TITLE_CACHE_N; i++) {
+        title_cache[i].index = UINT16_MAX;
+        title_cache[i].state = 0;
+    }
+}
+
 int dir_load(const struct fat_dir *d)
 {
+    title_reset();
     browser_mq.index = UINT16_MAX;
     browser_mq.width = 0;
     browser_mq.off = 0;
     uint32_t t0 = ticks();
     int r = 0;
     lib_shown = d->vol == VOL_LIB;
+    fav_shown = d->vol == VOL_FAV;
     if (lib_shown) {                            /* a library list (libbrowse.c) */
         dir_n = libv_load((int)d->cluster, d->size);
+        dir_full = 0;
+        return 0;
+    }
+    if (fav_shown) {
+        dir_n = fav_view_load();
         dir_full = 0;
         return 0;
     }
@@ -256,6 +287,7 @@ int dir_load(const struct fat_dir *d)
         dir_l.n = dir_l.full = 0;
         dir_l.used = 0;
         top_entry(T("Library"), F_LIB);         /* (first: ETUDE §127) */
+        top_entry(T("Favourites"), F_FAV);
         char lb[80];
         space_label(lb, T("Internal"), FAT_VOL_INT);
         top_entry(lb, 0);                        /* the names follow the listing's language */
@@ -290,6 +322,12 @@ int dir_load(const struct fat_dir *d)
 /* The directory an entry of the listing designates */
 void dir_of_entry(const struct entry *e, struct fat_dir *d)
 {
+    if ((e->flags & (F_DIR | F_FAV)) == (F_DIR | F_FAV)) {
+        d->vol = VOL_FAV;
+        d->contig = 0;
+        d->cluster = d->size = 0;
+        return;
+    }
     if ((e->flags & (F_DIR | F_LIB)) == (F_DIR | F_LIB)) {     /* a library list */
         d->vol = VOL_LIB;
         d->contig = 0;
@@ -311,6 +349,7 @@ static int same_file(const struct entry *a, const struct entry *b)
 /* ---- browser state: the path from the root ---- */
 struct path_level path[DEPTH_MAX];
 int depth;                                      /* path[depth] is the folder shown */
+int b_dirty = 1;
 
 void copy_name(char *d, const char *s, int max)
 {
@@ -324,7 +363,70 @@ void copy_name(char *d, const char *s, int max)
     d[i] = 0;
 }
 
-int b_dirty = 1;
+static void title_job(void *arg)
+{
+    (void)arg;
+    struct entry e = title_req_entry;
+    struct tags t = { 0 };
+    if (!((e.flags & F_SD) && sd_open())) {
+        struct fat_file f = {
+            .vol = e.flags & F_SD ? FAT_VOL_SD : FAT_VOL_INT,
+            .contig = (e.flags & F_CONTIG) != 0,
+            .cluster = e.cluster,
+            .size = e.size,
+        };
+        fat_open(&f);
+        tags_read(&f, e.flags & F_CODEC, &t);
+    }
+    if (title_req_gen == title_gen) {
+        for (unsigned i = 0; i < TITLE_CACHE_N; i++) {
+            struct title_cache_entry *c = &title_cache[i];
+            if (c->index == title_req_index && c->state == 1) {
+                copy_name(c->title, t.title[0] ? t.title : title_req_fallback, sizeof c->title);
+                c->state = 2;
+                b_dirty = 1;
+                break;
+            }
+        }
+    }
+    title_pending = 0;
+    b_dirty = 1;
+}
+
+static const char *display_name(int i)
+{
+    const struct entry *e = ent(i);
+    const char *name = ent_name(i);
+    if (!cfg.list_title || (e->flags & F_DIR))
+        return name;
+    struct title_cache_entry *c = 0;
+    for (unsigned n = 0; n < TITLE_CACHE_N; n++)
+        if (title_cache[n].index == i) {
+            c = &title_cache[n];
+            break;
+        }
+    if (!c) {
+        c = &title_cache[title_cache_next++ % TITLE_CACHE_N];
+        c->index = (uint16_t)i;
+        c->state = 0;
+        copy_name(c->title, name, sizeof c->title);
+    }
+    if (c->state == 2)
+        return c->title;
+    if (!title_pending) {
+        title_req_entry = *e;
+        title_req_index = (uint16_t)i;
+        title_req_gen = title_gen;
+        copy_name(title_req_fallback, name, sizeof title_req_fallback);
+        c->state = 1;
+        if (!storage_submit(title_job, 0))
+            title_pending = 1;
+        else
+            c->state = 0;
+    }
+    return c->title;
+}
+
 static int b_sel = -1, b_top = -1, b_mark = -1;
 
 static int playing_index(void)                  /* the row of the track that plays, or -1 */
@@ -354,11 +456,15 @@ static void draw_row(int r, int sel, int mark)
     const struct entry *e = ent(i);
     uint16_t bg = i == sel ? SEL_BG : BG;
     int dirent = e->flags & F_DIR;
-    /* a fixed column for the mark: » folder, ♪ the track that plays */
+    /* fixed mark column: » folder, ♪ playing track, ♥ favourite */
     lcd_fill(0, y, 22, 16, bg);
-    if (dirent || i == mark)
+    if (dirent && (e->flags & F_FAV))
+        lcd_glyph(5, y, 0x2665, TITLE_FG, bg);
+    else if (!dirent && fav_find(e) >= 0)
+        lcd_glyph(5, y, 0x2665, TITLE_FG, bg);
+    else if (dirent || i == mark)
         lcd_glyph(dirent ? 6 : 3, y, dirent ? 0xbb : 0x266a, dirent ? DIR_FG : TITLE_FG, bg);
-    const char *name = ent_name(i);
+    const char *name = display_name(i);
     int xmax = list_text_end(dir_n, ROWS);
     uint16_t fg = dirent ? DIR_FG : e->size ? FG : DIM;
     if (i == sel && (dirent || e->size)) {
@@ -752,7 +858,7 @@ int sd_watch(void)
     if (!in && depth && path[1].dir.vol == FAT_VOL_SD)
         depth = 0;
     libv_card_changed();                        /* the library's views: the card's tracks */
-    if (depth && path[depth].dir.vol == VOL_LIB)
+    if (depth && (path[depth].dir.vol == VOL_LIB || path[depth].dir.vol == VOL_FAV))
         dir_load(&path[depth].dir);
     if (!depth)
         dir_load(&path[0].dir);
@@ -826,6 +932,32 @@ static void queue_row(int sel, int next)
     resume_save_later();
 }
 
+static void favourite_note(int result)
+{
+    const char *s = result == 1 ? T("Favourite added") :
+                    result == 0 ? T("Favourite removed") :
+                    result == -2 ? T("Favourites need NEWFWLOG.TXT (32 KiB)") :
+                    result == -3 ? T("The favourites list is full") : T("Cannot save favourite");
+    copy_name(qmsg, s, sizeof qmsg);
+    qmsg_at = millis();
+    qmsg_on = 1;
+    b_dirty = 1;
+}
+
+static void favourite_toggle_row(int i)
+{
+    int r = fav_toggle(ent(i), ent_name(i));
+    favourite_note(r);
+    if (fav_shown && r == 0) {
+        int sel = path[depth].sel;
+        dir_load(&path[depth].dir);
+        if (sel >= dir_n && sel > 0)
+            sel--;
+        path[depth].sel = sel;
+        path[depth].top = sel >= path[depth].top + ROWS ? sel - ROWS + 1 : path[depth].top;
+    }
+}
+
 int browser_key(const struct key_ev *e)
 {
     int k = e->key, ev = e->type;
@@ -857,7 +989,18 @@ int browser_key(const struct key_ev *e)
         move(1);
     else if (k == KEY_BACK && ev == EV_PRESS)
         leave();
-    else if (k == KEY_PLAY && dir_n && lib_shown) {   /* a library list (ETUDE §127) */
+    else if (k == KEY_PLAY && dir_n && fav_shown) {
+        int sel = path[depth].sel;
+        if (ev == EV_PRESS) {
+            q_from_favs(sel, path[depth].name);
+            if (q_n) {
+                play_index(q_cur);
+                return UI_FULL | UI_TO_PLAYING;
+            }
+        } else if (ev == EV_LONG) {
+            favourite_toggle_row(sel);
+        }
+    } else if (k == KEY_PLAY && dir_n && lib_shown) {   /* a library list (ETUDE §127) */
         int sel = path[depth].sel;
         const struct entry *le = ent(sel);
         if (le->cluster == LIBV_INFO && (le->flags & F_DIR))
@@ -883,6 +1026,8 @@ int browser_key(const struct key_ev *e)
                 play_index(q_cur);
                 return UI_FULL | UI_TO_PLAYING;
             }
+        } else if (!(le->flags & F_DIR) && ev == EV_LONG) {
+            favourite_toggle_row(sel);
         } else if (!(le->flags & F_DIR) && ev == EV_PRESS) {
             if (parked && q_cur < q_n && q_ent(q_cur) && same_file(le, q_ent(q_cur)))
                 player_seek_hint(parked_ms);    /* the parked track: where it was */
@@ -895,9 +1040,16 @@ int browser_key(const struct key_ev *e)
         }
     } else if (k == KEY_PLAY && dir_n) {
         int sel = path[depth].sel;
-        if ((ent(sel)->flags & F_DIR) && ev == EV_PRESS)
+        const struct entry *se = ent(sel);
+        if ((se->flags & F_DIR) && ev == EV_PRESS)
             enter(sel);
-        else if (ent(sel)->flags & F_DIR) {
+        else if ((se->flags & (F_DIR | F_FAV)) == (F_DIR | F_FAV) && ev == EV_LONG) {
+            q_from_favs(-1, T("Favourites"));
+            if (q_n) {
+                play_index(q_cur);
+                return UI_FULL | UI_TO_PLAYING;
+            }
+        } else if (se->flags & F_DIR) {
             char nm[64];                        /* held on a folder: all that is under it */
             copy_name(nm, ent_name(sel), sizeof nm);
             struct fat_dir d;
@@ -911,7 +1063,9 @@ int browser_key(const struct key_ev *e)
                 if (storage_submit(walk_job, 0))
                     walk.state = WALK_NONE;
             }
-        } else if (ev == EV_PRESS && !ent(sel)->size) {
+        } else if (ev == EV_LONG) {
+            favourite_toggle_row(sel);
+        } else if (ev == EV_PRESS && !se->size) {
             play_failed(ent_name(sel), Q_EEMPTY); /* empty (grey): not played, the queue kept */
         } else if (ev == EV_PRESS) {
             if (parked && q_cur < q_n && q_ent(q_cur) && same_file(ent(sel), q_ent(q_cur)))

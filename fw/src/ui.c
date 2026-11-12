@@ -367,6 +367,7 @@ void ui_main(void)
     if (sd_present())
         /* the card mounted at once (0.99r26, ETUDE §106): */
         sd_open();
+    fav_load();                                  /* the user records in NEWFWLOG.TXT */
     resume_load();                              /* nothing plays yet; the language set */
     copy_name(path[0].name, T("Storage"), sizeof path[0].name);
     if (!depth && !dir_n) {                     /* nothing saved: the internal volume */

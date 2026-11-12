@@ -16,6 +16,10 @@ msgid "Library"
 msgstr ""
 
 #: src/browser.c
+msgid "Favourites"
+msgstr ""
+
+#: src/browser.c
 msgid "Internal"
 msgstr ""
 
@@ -63,6 +67,26 @@ msgstr ""
 #: src/browser.c
 #, c-format
 msgid "Added: %d tracks"
+msgstr ""
+
+#: src/browser.c
+msgid "Favourite added"
+msgstr ""
+
+#: src/browser.c
+msgid "Favourite removed"
+msgstr ""
+
+#: src/browser.c
+msgid "Favourites need NEWFWLOG.TXT (32 KiB)"
+msgstr ""
+
+#: src/browser.c
+msgid "The favourites list is full"
+msgstr ""
+
+#: src/browser.c
+msgid "Cannot save favourite"
 msgstr ""
 
 #: src/charge.c
@@ -560,6 +584,11 @@ msgstr ""
 msgid "Track title"
 msgstr ""
 
+#. TRANSLATORS: the time shown at the top of the play screen and the browser
+#: src/settings.c
+msgid "File list"
+msgstr ""
+
 #: src/settings.c
 msgid "ReplayGain"
 msgstr ""
@@ -582,6 +611,11 @@ msgstr ""
 
 #: src/settings.c
 msgid "Swap VOL+ and VOL-"
+msgstr ""
+
+#. TRANSLATORS: holding either volume key skips to another track
+#: src/settings.c
+msgid "Hold VOL to skip"
 msgstr ""
 
 #. TRANSLATORS: the music library (artists, albums...): its index, PLAY updates it
@@ -646,6 +680,10 @@ msgstr ""
 
 #: src/settings.c
 msgid "tags"
+msgstr ""
+
+#: src/settings.c
+msgid "track title"
 msgstr ""
 
 #. TRANSLATORS: the minutes left before the sleep timer stops the music

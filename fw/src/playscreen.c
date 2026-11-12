@@ -227,10 +227,26 @@ void draw_playing(int full)
  * the last), BACK start of the track or the one before, BACK held the play mode. Returns UI_*. */
 int play_key(const struct key_ev *e)
 {
+    static int vol_skip_done;
     int k = e->key, ev = e->type;
-    if (key_is_vol(k))
-        volume((k == KEY_VOLUP) != !!cfg.swap_vol ? -2 : 2);
-    else if (k == KEY_PLAY && ev == EV_PRESS) {
+    if (!key_held())
+        vol_skip_done = 0;
+    if (key_is_vol(k)) {
+        if (ev == EV_REPEAT && cfg.long_vol && key_held_us() >= 600000) {
+            if (!vol_skip_done) {
+                int n = k == KEY_VOLUP ? q_next_index(q_cur, 1) : q_prev_index(q_cur);
+                if (n >= 0) {
+                    play_index(n);
+                    vol_skip_done = 1;
+                } else
+                    volume((k == KEY_VOLUP) != !!cfg.swap_vol ? -2 : 2);
+            }
+        } else {
+            if (ev == EV_REPEAT)
+                vol_skip_done = 0;
+            volume((k == KEY_VOLUP) != !!cfg.swap_vol ? -2 : 2);
+        }
+    } else if (k == KEY_PLAY && ev == EV_PRESS) {
         if (q_playing) {
             audio_pause(!audio_paused);
             resume_save_later();

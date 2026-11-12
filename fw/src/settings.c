@@ -4,8 +4,8 @@
 #include "ui_priv.h"
 #include "lang.h"
 
-static const struct settings defaults = { 1, 10, 0, START_PLAY, 1, 0, 0, 0, 1, "", 0 };
-struct settings cfg = { 1, 10, 0, START_PLAY, 1, 0, 0, 0, 1, "", 0 };
+static const struct settings defaults = { 1, 10, 0, START_PLAY, 1, 0, 0, 0, 1, "", 0, 1, 1 };
+struct settings cfg = { 1, 10, 0, START_PLAY, 1, 0, 0, 0, 1, "", 0, 1, 1 };
 uint32_t sleep_at;
 
 static const uint16_t screen_s[] = { 10, 30, 60, 120, 300, 0 };     /* 0: never */
@@ -60,7 +60,7 @@ uint32_t settings_put(uint32_t *w)
 {
     struct set_block *b = (struct set_block *)w;
     __builtin_memset(b, 0, sizeof *b);          /* the padding too: it is in the sum */
-    __builtin_memcpy(b->magic, "NEWFWSET 3  ", 12);
+    __builtin_memcpy(b->magic, "NEWFWSET 4  ", 12);
     b->s = cfg;
     b->sum = set_sum(w, __builtin_offsetof(struct set_block, sum) / 4);
     return b->sum;
@@ -69,15 +69,19 @@ uint32_t settings_put(uint32_t *w)
 void settings_get(const uint32_t *w)
 {
     const struct set_block *b = (const struct set_block *)w;
+    int v4 = !__builtin_memcmp(b->magic, "NEWFWSET 4  ", 12) &&
+             b->sum == set_sum(w, __builtin_offsetof(struct set_block, sum) / 4);
     int v3 = !__builtin_memcmp(b->magic, "NEWFWSET 3  ", 12) &&
              b->sum == set_sum(w, __builtin_offsetof(struct set_block, sum) / 4);
     int v2 = !__builtin_memcmp(b->magic, "NEWFWSET 2  ", 12) &&
              w[SET_V2_WORDS] == set_sum(w, SET_V2_WORDS);
     int v1 = !__builtin_memcmp(b->magic, "NEWFWSET 1  ", 12) &&
              w[SET_V1_WORDS] == set_sum(w, SET_V1_WORDS);
-    if (v1 || v2 || v3) {
+    if (v1 || v2 || v3 || v4) {
         cfg = defaults;                         /* each value checked: a bad one, its default */
-        __builtin_memcpy(&cfg, &b->s, v3 ? sizeof cfg : v2 ? SET_V2_BYTES : 8);
+        unsigned copy_len = v4 ? sizeof cfg : v3 ? __builtin_offsetof(struct settings, list_title) :
+                            v2 ? SET_V2_BYTES : 8;
+        __builtin_memcpy(&cfg, &b->s, copy_len);
         cfg.lang[sizeof cfg.lang - 1] = 0;
         if (cfg.screen >= N(screen_s))
             cfg.screen = defaults.screen;
@@ -93,11 +97,14 @@ void settings_get(const uint32_t *w)
             cfg.rg_pre = 0;
         cfg.uac_remote = cfg.uac_remote != 0;
         cfg.hide_clock = cfg.hide_clock != 0;
+        cfg.list_title = cfg.list_title != 0;
+        cfg.long_vol = cfg.long_vol != 0;
         log_printf("ui: settings %u: screen %u, brightness %u %%, %s, RG preamp %d dB, start %u, "
-                   "off %u, swap %u, remote %u, language %s, clock %s", v3 ? 3 : v2 ? 2 : 1,
-                   cfg.screen, bright_pct[cfg.bright - 1], cfg.names ? "names" : "tags",
-                   cfg.rg_pre, cfg.start, cfg.auto_off, cfg.swap_vol, cfg.uac_remote,
-                   cfg.lang[0] ? cfg.lang : "en", cfg.hide_clock ? "hidden" : "shown");
+                   "off %u, swap %u, remote %u, language %s, clock %s, list title %u, long VOL %u",
+                   v4 ? 4 : v3 ? 3 : v2 ? 2 : 1, cfg.screen, bright_pct[cfg.bright - 1],
+                   cfg.names ? "names" : "tags", cfg.rg_pre, cfg.start, cfg.auto_off, cfg.swap_vol,
+                   cfg.uac_remote, cfg.lang[0] ? cfg.lang : "en",
+                   cfg.hide_clock ? "hidden" : "shown", cfg.list_title, cfg.long_vol);
     }                                           /* (RG mode: resume.c) */
     lang_set_code(cfg.lang);                    /* unknown to this image: English */
     lcd_brightness(bright_pct[cfg.bright - 1]); /* (ReplayGain: when a track is heard) */
@@ -105,15 +112,17 @@ void settings_get(const uint32_t *w)
 
 /* ---- the screen: VOL+/VOL- the line, PLAY the next value, PLAY held the one before,
  * BACK or MENU back (saved). Each change takes effect at once. ---- */
-enum { S_LANG, S_CLOCK, S_SHOW_CLOCK, S_SCREEN, S_BRIGHT, S_NAMES, S_RG, S_RG_PRE, S_START,
-       S_SLEEP, S_AUTO_OFF, S_SWAP, S_LIBRARY, S_DEFAULTS, S_COUNT };
+enum { S_LANG, S_CLOCK, S_SHOW_CLOCK, S_SCREEN, S_BRIGHT, S_NAMES, S_LIST_TITLE, S_RG, S_RG_PRE,
+       S_START, S_SLEEP, S_AUTO_OFF, S_SWAP, S_LONG_VOL, S_LIBRARY, S_DEFAULTS, S_COUNT };
 static const char *const s_names[S_COUNT] = {
     EN("Language"),                             /* in English: found again in any language */
     N_("Date and time"),
     /* TRANSLATORS: the time shown at the top of the play screen and the browser */
-    N_("Clock"), N_("Screen off after"), N_("Brightness"), N_("Track title"),
+    N_("Clock"), N_("Screen off after"), N_("Brightness"), N_("Track title"), N_("File list"),
     N_("ReplayGain"), N_("ReplayGain preamp"), N_("At power on"), N_("Sleep timer"),
     N_("Power off when idle"), N_("Swap VOL+ and VOL-"),
+    /* TRANSLATORS: holding either volume key skips to another track */
+    N_("Hold VOL to skip"),
     /* TRANSLATORS: the music library (artists, albums...): its index, PLAY updates it */
     N_("Library (PLAY: update)"), N_("Restore the defaults (PLAY)"),
 };
@@ -183,6 +192,9 @@ static void value_text(int i, char *b)
     case S_NAMES:
         p = log_format(p, end, "%s", cfg.names ? T("file name") : T("tags"));
         break;
+    case S_LIST_TITLE:
+        p = log_format(p, end, "%s", cfg.list_title ? T("track title") : T("file name"));
+        break;
     case S_RG:
         p = log_format(p, end, "%s", tr(rg_names[rg_mode]));
         break;
@@ -207,6 +219,9 @@ static void value_text(int i, char *b)
         break;
     case S_SWAP:
         p = log_format(p, end, "%s", cfg.swap_vol ? T("yes") : T("no"));
+        break;
+    case S_LONG_VOL:
+        p = log_format(p, end, "%s", cfg.long_vol ? T("yes") : T("no"));
         break;
     case S_LIBRARY:
         if (lib_tracks < 0)
@@ -255,6 +270,9 @@ static void change(int i, int d)
     case S_NAMES:
         cfg.names ^= 1;
         break;
+    case S_LIST_TITLE:
+        cfg.list_title ^= 1;
+        break;
     case S_RG: {
         int k = 0;
         while (k < RG_MODES - 1 && rg_order[k] != rg_mode)
@@ -287,6 +305,9 @@ static void change(int i, int d)
         break;
     case S_SWAP:
         cfg.swap_vol ^= 1;
+        break;
+    case S_LONG_VOL:
+        cfg.long_vol ^= 1;
         break;
     case S_DEFAULTS: {
         char keep[sizeof cfg.lang];             /* the language stays: the defaults are read */

@@ -503,6 +503,10 @@ msgstr "是"
 msgid "no"
 msgstr "否"
 
+#: src/settings.c
+msgid "Hold VOL to skip"
+msgstr "长按音量键切歌"
+
 #: src/uac.c src/usbmode.c
 #, fuzzy
 msgid "waiting for the host"
@@ -894,3 +898,35 @@ msgstr ""
 #: src/libbrowse.c
 msgid "SD card not readable (FAT32 or exFAT only)"
 msgstr ""
+
+#: src/browser.c
+msgid "Favourites"
+msgstr "收藏夹"
+
+#: src/browser.c
+msgid "Favourite added"
+msgstr "已添加到收藏"
+
+#: src/browser.c
+msgid "Favourite removed"
+msgstr "已从收藏中移除"
+
+#: src/browser.c
+msgid "Favourites need NEWFWLOG.TXT (32 KiB)"
+msgstr "收藏需创建至少 32 KiB 的 NEWFWLOG.TXT"
+
+#: src/browser.c
+msgid "The favourites list is full"
+msgstr "收藏列表已满"
+
+#: src/browser.c
+msgid "Cannot save favourite"
+msgstr "无法保存收藏"
+
+#: src/settings.c
+msgid "File list"
+msgstr "文件列表"
+
+#: src/settings.c
+msgid "track title"
+msgstr "歌曲标题"

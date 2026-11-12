@@ -90,9 +90,10 @@ void dir_of_entry(const struct entry *e, struct fat_dir *d);
 
 #define VOL_TOP   2                             /* fat_dir.vol of the top level */
 #define VOL_LIB   3                             /* of a library list (libbrowse.c) */
-#define F_LIB     0x0001                        /* with F_DIR: a library list (cluster: its
-                                                 * kind, size: its param) */
+#define F_LIB     0x0001                        /* with F_DIR: a library list */
+#define F_FAV     0x0002                        /* with F_DIR: the favourites list */
 #define LIBV_UPDATE 99                          /* an F_LIB row that updates the library */
+#define VOL_FAV   4                             /* the browser's synthetic favourites list */
 #define LIBV_INFO   98                          /* an F_LIB row that says something only */
 #define DEPTH_MAX 16
 struct path_level {
@@ -123,6 +124,14 @@ void browser_marquee_tick(void);
 void browser_lang_changed(void);                /* the volumes' names again, in the new language */
 int browser_walking(void);                      /* a tree walk runs in the storage task */
 int browser_walk_poll(void);                    /* its end: UI_* (playing from its first track) */
+void fav_load(void);
+int fav_count(void);
+int fav_find(const struct entry *e);
+int fav_toggle(const struct entry *e, const char *name);
+int fav_get(int i, struct entry *e, char *name, int max);
+int fav_view_load(void);
+const struct entry *fav_view_entry(int i);
+const char *fav_view_name(int i);
 struct q_state;
 int browser_walk_resume(const struct fat_dir *d, const char *nm, const struct q_state *qs,
                         uint32_t track);        /* a resume: its track plays meanwhile */
@@ -173,6 +182,7 @@ int q_on_sd(void);                              /* the queue is on the card */
 /* A library list from its track 'start' (-1: PLAY held, the first or anywhere in shuffle); kept
  * in NEWFWQ.DAT once written there (the storage task) */
 void q_from_lib(int kind, uint32_t param, int start, const char *name);
+void q_from_favs(int start, const char *name);  /* favourites list: selected track first */
 int q_is_lib(void);                             /* a library list not yet in the file */
 int q_is_file(void);                            /* the queue is NEWFWQ.DAT's */
 /* The queue mode (ETUDE §128): tracks added at the end, or put next */
@@ -265,8 +275,10 @@ struct settings {
     uint8_t uac_remote;
     char lang[8];                               /* the interface's language: its code (lang.h), */
                                                 /* "" English (0.101) */
-    uint8_t hide_clock;                         /* the clock not shown (§120): 0 in a block of */
-};                                              /* 0.101 (its padding byte), shown */
+    uint8_t hide_clock;                         /* the clock not shown (§120): added in version 3 */
+    uint8_t list_title;                         /* browser: show a track's title tag */
+    uint8_t long_vol;                           /* hold VOL to skip tracks */
+};                                              /* version 4 */
 #define SET_V2_BYTES 9                          /* the values up to uac_remote (version 2) */
 extern struct settings cfg;
 extern uint32_t sleep_at;                       /* the sleep timer ends (millis), 0: off */
